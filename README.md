@@ -162,14 +162,16 @@ print(sorted(ALL_MODELS))
 
 ## Citation
 
-If you use SurvFM, please cite:
+If you use Survival FM, please cite:
 
 ```bibtex
-@article{pham2026tabular,
+@inproceedings{pham2026tabular,
   title={Tabular Foundation Models for Clinical Survival Analysis via Survival-Aware Adaptation},
-  author={Pham, Minh-Khoi and Cotugno, Luca and Sirbu, Alina and Mai, Tai Tan and Crane, Martin and Bezbradica, Marija},
-  journal={arXiv preprint arXiv:2606.12006},
-  year={2026}
+  author={Pham, Minh-Khoi and Cotugno, Luca and S{\^\i}rbu, Alina and Mai, Tai Tan and Crane, Martin and Bezbradica, Marija},
+  booktitle={International Conference on AI in Healthcare},
+  pages={315--328},
+  year={2026},
+  organization={Springer}
 }
 ```
 
