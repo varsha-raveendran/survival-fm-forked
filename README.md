@@ -1,21 +1,27 @@
-# SurvFM: Survival-Aware Adaptation of Tabular Foundation Models
+# SurvFM: Adapting Tabular Foundation Models for Time-to-Event Prediction
 
 [![Paper](https://img.shields.io/badge/paper-AIiH%202026-green)](.)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![uv](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/uv/main/assets/badge/v0.json)](https://github.com/astral-sh/uv)
 
-SurvFM is a modular framework for adapting tabular foundation models to survival analysis. It connects pretrained tabular backbones such as TabPFN, TabDPT, and TabICL with censoring-aware survival heads, including Cox proportional hazards, DeepHit, MTLR, and PC-Hazard, and evaluates them against classical, tree-based, and deep survival baselines.
+SurvFM is a framework for transferring pretrained tabular foundation models to censored time-to-event prediction.
 
-The project studies whether tabular foundation model priors transfer to clinical time-to-event prediction, where labels are right-censored and the target is a survival function rather than a class probability. SurvFM proposes multiple adaptation strategies: frozen-backbone survival heads, jointly adapted backbone-head models, temporal expansion fine-tuning, and zero-shot in-context survival prediction through time-bin discretisation.
+The repository implements and compares three adaptation interfaces:
+
+- **Zero-shot reformulation** using the native TabFM classification interface over discretized time horizons.
+- **Classification adaptation** using censoring-aware temporal expansion and a trainable classification head.
+- **Survival-head adaptation** using CoxPH, MTLR, or DeepHit over frozen, context-conditioned TabFM representations.
+
+The currently supported tabular foundation model backbones are **TabPFN**, **TabDPT**, and **TabICL**. The code supports both single-risk and competing-risk prediction and includes loaders for the public datasets used in the benchmark, including SurvSet.
 
 ## Installation
 
 Clone the repository and install the package in editable mode:
 
 ```bash
-git clone <repo-url>
-cd survpfn
+git clone https://github.com/kaylode/survival-fm.git
+cd survival-fm
 uv sync
 ```
 
@@ -25,144 +31,188 @@ For development dependencies:
 uv sync --extra dev
 ```
 
-Some foundation-model checkpoints are stored under `survpfn/models/models_diff/` or downloaded by the corresponding backend package on first use.
-
 ## Quick Start
 
-The model registry in `survpfn.models.ALL_MODELS` exposes the training entry points used by the benchmark. Each callable expects a training dataframe, a test dataframe, the duration column name, and the event column name. It returns:
+### Load a SurvSet dataset
+
+SurvFM includes a wrapper around the [SurvSet](https://github.com/ErikinBC/SurvSet) collection.
 
 ```python
-model, risk_scores, survival_probabilities, time_grid
-```
-
-Example: fine-tune a TabPFN-based survival model with a Cox head.
-
-```python
-import numpy as np
-import pandas as pd
 from sklearn.model_selection import train_test_split
 
-from survpfn.models import ALL_MODELS
+from survpfn.dataloaders.data_utils import load_survset_dataset
+from survpfn.dataloaders.data_utils.survset import list_survset_datasets
 
-# Example data: feature columns plus duration and event columns.
-# Replace this with your own dataframe.
-rng = np.random.default_rng(42)
-df = pd.DataFrame(
-    {
-        "age": rng.normal(65, 10, 200),
-        "marker": rng.normal(0, 1, 200),
-        "duration": rng.uniform(1, 100, 200),
-        "event": rng.integers(0, 2, 200),
-    }
-)
+print(list_survset_datasets())
+df, duration_col, event_col = load_survset_dataset("GBSG2")
 
-df_train, df_test = train_test_split(
+train_df, test_df = train_test_split(
     df,
     test_size=0.2,
     random_state=42,
-    stratify=df["event"],
+    stratify=df[event_col],
 )
 
-train_tabpfn_cox = ALL_MODELS["tabpfn_embedding_cox"]
-
-model, risk, surv_probs, times = train_tabpfn_cox(
-    df_train,
-    df_test,
-    "duration",
-    "event",
-    device="cuda:0",      # use "cpu" if CUDA is unavailable
-    num_durations=10,
-    epochs=20,
-    batch_size=32,
-    random_state=42,
-    tune=False,
-)
-
-print(risk.shape)        # one risk score per test row
-print(surv_probs.shape)  # rows=test samples, columns=time grid
-print(times[:5])
+print(df.shape)
+print(duration_col, event_col)
 ```
 
-For lower-level control, instantiate the TabPFN survival wrapper directly:
+
+## Low-Level Model API
+
+The registry above is useful for reproducing benchmark configurations. The underlying classes can also be instantiated directly when finer control over context size, temporal discretization, head type, ensembling, or optimization is required.
+
+### Zero-shot prediction
+
+Zero-shot prediction directly reuses the pretrained TabFM classification interface. No survival head or backbone parameters are optimized.
+
+```python
+from survpfn.models.shared.zeroshot import ZeroShotSurvivalPredictor
+
+model = ZeroShotSurvivalPredictor(
+    backbone="tabpfn", # "tabdpt", "tabicl"
+    method="per_bin",
+    n_bins=20,
+    context_size=256,
+    max_context_size=256,
+    use_time_bin_encoder=True, # enables the structured temporal features used by the time-bin-encoded zero-shot configuration.
+    n_estimators=1,
+    device="cuda:0",
+)
+
+model.fit(
+    train_df,
+    duration_col=duration_col,
+    event_col=event_col,
+)
+
+survival_df = model.predict_survival(test_df)
+
+print(survival_df.shape)
+print(survival_df.head())
+```
+
+
+### Classification-head adaptation
+
+For direct control over censoring-aware classification adaptation:
+
+```python
+import numpy as np
+
+from survpfn.models.tabpfn import TabPFNSurvPHFinetune
+
+feature_cols = [
+    c for c in train_df.columns
+    if c not in {duration_col, event_col}
+]
+
+X_train = train_df[feature_cols].to_numpy(dtype=np.float32)
+T_train = train_df[duration_col].to_numpy()
+E_train = train_df[event_col].to_numpy()
+
+X_test = test_df[feature_cols].to_numpy(dtype=np.float32)
+
+model = TabPFNSurvPHFinetune(
+    num_durations=20,
+    context_size=256,
+    batch_size=128,
+    device="cuda:0",
+    freeze_backbone=True,
+)
+
+model.fit(
+    X_train,
+    T_train,
+    E_train,
+)
+
+survival_df = model.predict_survival_df(
+    X_test,
+    n_ensemble=5,
+)
+
+print(survival_df.shape)
+```
+
+This interface internally expands each subject over discrete prediction horizons and trains a censoring-aware classification head while retaining the pretrained TabFM backbone.
+
+### CoxPH, MTLR, and DeepHit survival heads
+
+The survival-head API exposes the downstream objective through `head_type`.
 
 ```python
 import numpy as np
 
 from survpfn.models.tabpfn import TabPFNSurvPH
 
-feature_cols = [c for c in df_train.columns if c not in {"duration", "event"}]
+feature_cols = [
+    c for c in train_df.columns
+    if c not in {duration_col, event_col}
+]
 
-model = TabPFNSurvPH(
-    head_type="cox",
+X_train = train_df[feature_cols].to_numpy(dtype=np.float32)
+T_train = train_df[duration_col].to_numpy()
+E_train = train_df[event_col].to_numpy()
+
+X_test = test_df[feature_cols].to_numpy(dtype=np.float32)
+
+model = TabPFNSurvPH(.        # "TabDPTSurvPH", "TabICLSurvPH"
+    head_type="cox",          # "cox", "mtlr", or "deephit"
     freeze_tabpfn=True,
-    num_durations=10,
+    num_durations=20,
     input_dim=len(feature_cols),
     context_size=256,
     device="cuda:0",
-    epochs=20,
-    batch_size=32,
+    epochs=50,
+    batch_size=128,
 )
 
 model.fit(
-    df_train[feature_cols].to_numpy(dtype=np.float32),
-    df_train["duration"].to_numpy(),
-    df_train["event"].to_numpy(),
+    X_train,
+    T_train,
+    E_train,
 )
 
 survival_df = model.predict_survival_df(
-    df_test[feature_cols].to_numpy(dtype=np.float32)
+    X_test,
+    n_ensemble=5,
 )
+
+print(survival_df.shape)
 ```
+
+All three retain the pretrained backbone when the corresponding freeze option is enabled and train the downstream survival head over context-conditioned representations.
+
 
 ## Project Structure
 
 ```text
-survpfn/
+survival-fm/
 |-- README.md                  # Project overview and usage notes
 |-- pyproject.toml             # Package metadata and dependencies
-|-- uv.lock                    # Reproducible uv dependency lockfile
-|-- docs/                      # Additional project notes and documentation
+|-- uv.lock                    # Reproducible uv environment
+|-- docs/                      # Additional documentation
 |-- checkpoints/               # Local model checkpoints
-|-- data -> ...                # Local dataset 
-|-- results -> ...             # Local benchmark output 
 |-- survpfn/
-|   |-- configs/               # Model and tuning configuration JSON files
-|   |-- dataloaders/           # Public, EHR, SurvSet, and competing-risk loaders
-|   |-- metrics/               # Survival, competing-risk, calibration, and stats metrics
-|   |-- models/                # Classical baselines, deep survival models, and FM adapters
-|   |   |-- tabpfn/            # TabPFN backbone plus survival wrappers
-|   |   |-- tabdpt/            # TabDPT backbone plus survival wrappers
-|   |   |-- tabicl/            # TabICL backbone plus survival wrappers
-|   |   |-- shared/            # Shared fine-tuning, losses, preprocessing, and binning
-|   |   |-- sr_models/         # Single-risk survival baselines
-|   |   `-- cr_models/         # Competing-risk survival baselines
-|   |-- scripts/               # Python CLIs for benchmarks and statistical analysis
-|   |-- utils/                 # Config, logging, I/O, Optuna, and reproducibility helpers
-|-- tests/                     # Unit and integration tests
-```
-
-## Core Model Families
-
-SurvFM includes:
-
-- Classical survival baselines: Cox proportional hazards and Kaplan-Meier.
-- Tree-based baselines: Random Survival Forests and Gradient Boosting Survival Analysis.
-- Deep survival baselines: DeepSurv, DeepHit, MTLR, PC-Hazard, SurvTRACE, SODEN, and DySurv.
-- Tabular foundation model adapters: TabPFN, TabDPT, and TabICL with survival heads.
-- Zero-shot in-context survival methods using single-context or per-bin time discretisation.
-- Competing-risk variants for classical, deep, and foundation-model approaches.
-
-Available registry names can be inspected with:
-
-```python
-from survpfn.models import ALL_MODELS
-
-print(sorted(ALL_MODELS))
+|   |-- configs/               # Model and tuning configuration
+|   |-- dataloaders/           # Public, SurvSet, EHR, and CR loaders
+|   |-- metrics/               # Survival and competing-risk metrics
+|   |-- models/
+|   |   |-- tabpfn/            # TabPFN adapters
+|   |   |-- tabdpt/            # TabDPT adapters
+|   |   |-- tabicl/            # TabICL adapters
+|   |   |-- shared/            # Shared losses, binning, and training logic
+|   |   |-- sr_models/         # Single-risk baselines
+|   |   `-- cr_models/         # Competing-risk baselines
+|   |-- scripts/               # Benchmark and analysis scripts
+|   `-- utils/                 # Configuration and utilities
+|-- tests/
 ```
 
 ## Citation
 
-If you use Survival FM, please cite:
+If you use the MTLR-based TabFM adaptation introduced in our earlier work, please cite:
 
 ```bibtex
 @inproceedings{pham2026tabular,
@@ -171,8 +221,9 @@ If you use Survival FM, please cite:
   booktitle={International Conference on AI in Healthcare},
   pages={315--328},
   year={2026},
-  organization={Springer}
+  organization={Springer},
+  doi={10.1007/978-3-032-35387-0_23}
 }
 ```
 
-This paper was accepted to Artificial Intelligence in Healthcare (AIiH) 2026, London, UK.
+The broader adaptation-interface benchmark, including CoxPH, DeepHit, classification adaptation, structured time-bin encoding, context-resampled training, and competing-risk experiments, is described in our upcoming manuscript.
