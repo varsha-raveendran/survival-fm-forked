@@ -1,4 +1,4 @@
-# SurvFM: Adapting Tabular Foundation Models for Time-to-Event Prediction
+# Adapting Tabular Foundation Models for Time-to-Event Prediction
 
 [![Paper](https://img.shields.io/badge/paper-AIiH%202026-green)](.)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
