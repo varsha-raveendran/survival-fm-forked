@@ -213,6 +213,7 @@ survival-fm/
 ## Citation
 
 If you use the MTLR-based TabFM adaptation introduced in our earlier work, please cite:
+The broader adaptation-interface benchmark, including CoxPH, DeepHit, classification adaptation, structured time-bin encoding, context-resampled training, and competing-risk experiments, is described in our [latest manuscript](https://arxiv.org/abs/2609.04901).
 
 ```bibtex
 @inproceedings{pham2026tabular,
@@ -224,6 +225,15 @@ If you use the MTLR-based TabFM adaptation introduced in our earlier work, pleas
   organization={Springer},
   doi={10.1007/978-3-032-35387-0_23}
 }
+
+@misc{pham2026adaptationinterfacesincontexttabular,
+      title={Adaptation Interfaces for In-Context Tabular Foundation Models in Time-to-Event Prediction}, 
+      author={Minh-Khoi Pham and Luca Cotugno and Dan Cernei and Alina Sirbu and Stefano Masi and Giuseppe Prencipe and Alessandro Pingitore and Patrizia Landi and Working Group on Uric Acid and Cardiovascular Risk of the Italian Society of Hypertension and Tai Tan Mai and Martin Crane and Marija Bezbradica},
+      year={2026},
+      eprint={2609.04901},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2609.04901}, 
+}
 ```
 
-The broader adaptation-interface benchmark, including CoxPH, DeepHit, classification adaptation, structured time-bin encoding, context-resampled training, and competing-risk experiments, is described in our upcoming manuscript.
