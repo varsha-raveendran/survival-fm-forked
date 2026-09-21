@@ -9,6 +9,7 @@ from .single import (
 	load_veterans,
 	load_flchain,
 	load_seer_dataset,
+	load_hecktor,
 	load_urrah_dataset,
 	load_survset_dataset, SURVSET_BENCHMARK,
     load_ormoni_tirodei_cv,
@@ -40,6 +41,8 @@ BENCHMARK_DATASETS = {
     "FLCHAIN":      load_flchain,
     # SEER Breast Cancer (public CSV, ~4024 patients)
     "SEER":         load_seer_dataset,
+    # HECKTOR 2026 head-and-neck cancer (shared with sibling hnc-gnn-surv project)
+    "HECKTOR":      load_hecktor,
     # SurvSet — 25-dataset curated benchmark (SS_ prefix)
     "ORMONI_TIRODEI_CV": load_ormoni_tirodei_cv,
     "ORMONI_TIRODEI_MI": load_ormoni_tirodei_mi,

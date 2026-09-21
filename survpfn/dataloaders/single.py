@@ -8,6 +8,7 @@ from survpfn.dataloaders.data_utils import (
 	load_veterans,
 	load_flchain,
 	load_seer_dataset,
+	load_hecktor,
 	load_urrah_dataset,
 	load_survset_dataset,
 	SURVSET_BENCHMARK,

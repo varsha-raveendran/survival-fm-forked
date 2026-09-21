@@ -8,6 +8,7 @@ from .custom import (
 	TorchSurvivalDatasetDeepHit
 )
 from .seer import load_seer_dataset
+from .hecktor import load_hecktor
 from .ormoni_tirodei import (
 	load_ormoni_tirodei_mortality,
 	load_ormoni_tirodei_cv,
